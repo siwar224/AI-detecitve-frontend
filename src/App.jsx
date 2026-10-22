@@ -723,8 +723,10 @@ function App() {
 
         {status === 'loading' && !report && (
           <Panel className="p-10 text-center">
-            <p className="text-sm text-slate-300">Searching for the backend…</p>
-            <p className="mt-2 text-xs text-slate-500">Ports 5000 and 3000 are being checked.</p>
+            <p className="text-sm text-slate-300">
+              {sourceMode === 'file' ? 'Analyzing the selected JSON logs…' : 'Searching for the backend…'}
+            </p>
+            {sourceMode === 'url' && <p className="mt-2 text-xs text-slate-500">Ports 5000 and 3000 are being checked.</p>}
           </Panel>
         )}
 
