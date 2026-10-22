@@ -18,6 +18,29 @@ The dashboard gives a developer a focused workflow:
 
 The interface is optimized for desktop debugging sessions, with a two-column workspace: detailed incidents on the left and the generated resolution prompt on the right.
 
+## The developer story
+
+Imagine that you are working on an important backend project and a request suddenly fails. The terminal contains a long list of messages, repeated errors and warnings from several dependent services. You do not want another dashboard that hides the important details, and you do not want to copy raw logs into an AI tool without understanding what is happening first.
+
+AI Detective gives you a practical investigation path:
+
+1. Bring the evidence into the dashboard by connecting to a live backend or selecting a JSON/JSONL log file.
+2. Read the situation at a glance through the error, warning, analyzed-line and recurring-group statistics.
+3. Open every error occurrence and identify its exact source line instead of relying on a vague summary.
+4. Select one error when you need a focused fix, or select all errors when the incident requires a complete diagnosis.
+5. Review several concrete resolution steps, with clear attribution when Stack Overflow recommendations were used.
+6. Copy a professional, structured prompt into the LLM of your choice. The prompt contains the selected evidence, probable cause, affected scope, requested tests and verification steps.
+
+The result is a faster and more controlled debugging session: the developer keeps the facts, understands the proposed action and decides what to apply. AI Detective is an assistant for investigation, not a black box that silently changes the project.
+
+## Product walkthrough
+
+The screenshot below shows the desktop workspace with incident statistics, individual error occurrences and the focused prompt assistant. In this example, the developer selected one error occurrence, so the generated prompt is scoped to that error rather than the complete incident.
+
+![AI Detective dashboard](docs/screenshots/ai-detective-dashboard.png)
+
+*AI Detective desktop dashboard: detailed evidence on the left and a focused resolution prompt on the right.*
+
 ## Repository boundaries
 
 The projects are deliberately independent:
