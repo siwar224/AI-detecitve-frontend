@@ -151,7 +151,7 @@ function resolutionStepsFor(message = '') {
   ]
 }
 
-function ErrorList({ errors, total, selectionMode, selectedLines, onToggleLine, activeLine, onSelectError }) {
+function ErrorList({ errors, total, selectionMode, selectedIds, onToggleId, activeLine, onSelectError }) {
   return (
     <Panel className="border-danger/25 bg-danger/[0.035]">
       <div className="border-b border-line px-6 py-5 sm:px-8">
@@ -178,8 +178,11 @@ function ErrorList({ errors, total, selectionMode, selectedLines, onToggleLine, 
               {selectionMode && (
                 <input
                   type="checkbox"
-                  checked={selectedLines.includes(item.line_number)}
-                  onChange={() => onToggleLine(item.line_number)}
+                  checked={selectedIds.includes(item.id)}
+                  onChange={(event) => {
+                    event.stopPropagation()
+                    onToggleId(item.id)
+                  }}
                   aria-label={`Select the error on line ${item.line_number}`}
                   className="mt-1.5 h-4 w-4 shrink-0 accent-mint"
                 />
@@ -306,7 +309,7 @@ function App() {
   const [promptError, setPromptError] = useState('')
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false)
   const [promptScope, setPromptScope] = useState('all')
-  const [selectedErrorLines, setSelectedErrorLines] = useState([])
+  const [selectedErrorIds, setSelectedErrorIds] = useState([])
   const [activeErrorLine, setActiveErrorLine] = useState(null)
   const analysisInFlightRef = useRef(false)
   const lastAnalysisAtRef = useRef(0)
@@ -320,7 +323,7 @@ function App() {
     setError('')
     setGeneratedPrompt('')
     setPromptError('')
-    setSelectedErrorLines([])
+    setSelectedErrorIds([])
     setActiveErrorLine(null)
     setConnectionOpen(true)
     setStatus(mode === 'url' ? 'loading' : 'idle')
@@ -348,7 +351,7 @@ function App() {
       setGeneratedPrompt('')
       setPromptError('')
       setPromptScope('all')
-      setSelectedErrorLines([])
+      setSelectedErrorIds([])
       setActiveErrorLine(null)
       setStatus('ready')
       setConnectionOpen(false)
@@ -380,7 +383,7 @@ function App() {
       setGeneratedPrompt('')
       setPromptError('')
       setPromptScope('all')
-      setSelectedErrorLines([])
+      setSelectedErrorIds([])
       setActiveErrorLine(null)
       setStatus('ready')
       setConnectionOpen(false)
@@ -458,8 +461,9 @@ function App() {
 
   const detailedErrors = useMemo(() => {
     if (!report) return []
-    return (report.statistics.top_errors || []).flatMap((item) => (
-      item.line_numbers.map((lineNumber) => ({
+    return (report.statistics.top_errors || []).flatMap((item, groupIndex) => (
+      item.line_numbers.map((lineNumber, occurrenceIndex) => ({
+        id: `${groupIndex}-${occurrenceIndex}-${lineNumber}`,
         message: item.message,
         line_number: lineNumber,
       }))
@@ -526,7 +530,7 @@ function App() {
     if (!report || isHealthy || isGeneratingPrompt) return
     const promptErrors = promptScope === 'all'
       ? detailedErrors
-      : detailedErrors.filter((item) => selectedErrorLines.includes(item.line_number))
+      : detailedErrors.filter((item) => selectedErrorIds.includes(item.id))
     if (promptErrors.length === 0) {
       setPromptError('Select at least one error before generating this prompt.')
       return
@@ -534,14 +538,29 @@ function App() {
     setIsGeneratingPrompt(true)
     setPromptError('')
     try {
-      const result = await generateResolutionPrompt({
-        problem: `${report.incident_summary}\n\nErrors to resolve:\n${promptErrors.map((item) => `- Line ${item.line_number}: ${item.message}`).join('\n')}`,
-        cause: primary?.cause,
-        errorCount: promptErrors.length,
-        recommendations: [
+      const selectedScope = promptScope === 'selected'
+      const relevantHypotheses = selectedScope
+        ? (report.hypotheses || []).filter((hypothesis) => (
+          hypothesis.supporting_evidence || []
+        ).some((evidence) => promptErrors.some((item) => evidence.line_number === item.line_number)))
+        : (report.hypotheses || [])
+      const scopedCauses = [...new Set(relevantHypotheses.map((hypothesis) => hypothesis.cause).filter(Boolean))]
+      const scopedRecommendations = selectedScope
+        ? [
+          ...promptErrors.flatMap((item) => resolutionStepsFor(item.message)),
+          ...relevantHypotheses.flatMap((hypothesis) => hypothesis.recommended_checks || []),
+        ]
+        : [
           ...(report.recommendations || []),
           ...(report.resolution_steps || []).map((step) => `${step.action} (Stack Overflow recommendation)`),
-        ].slice(0, 5),
+        ]
+      const result = await generateResolutionPrompt({
+        problem: selectedScope
+          ? `IMPORTANT SCOPE: Resolve only the selected error occurrence(s) below. Do not include or solve other errors from the incident.\n\nSelected error occurrence(s):\n${promptErrors.map((item) => `- Line ${item.line_number}: ${item.message}`).join('\n')}`
+          : `${report.incident_summary}\n\nErrors to resolve:\n${promptErrors.map((item) => `- Line ${item.line_number}: ${item.message}`).join('\n')}`,
+        cause: scopedCauses.join('; ') || (selectedScope ? undefined : primary?.cause),
+        errorCount: promptErrors.length,
+        recommendations: scopedRecommendations.slice(0, 5),
         evidence: promptErrors.map((item) => `Line ${item.line_number}: ${item.message}`),
       })
       setGeneratedPrompt(result.prompt)
@@ -561,14 +580,14 @@ function App() {
     setPromptScope(scope)
     setGeneratedPrompt('')
     setPromptError('')
-    if (scope === 'all') setSelectedErrorLines([])
+    if (scope === 'all') setSelectedErrorIds([])
   }
 
-  function toggleErrorLine(lineNumber) {
-    setSelectedErrorLines((current) => (
-      current.includes(lineNumber)
-        ? current.filter((line) => line !== lineNumber)
-        : [...current, lineNumber]
+  function toggleErrorId(errorId) {
+    setSelectedErrorIds((current) => (
+      current.includes(errorId)
+        ? current.filter((id) => id !== errorId)
+        : [...current, errorId]
     ))
     setGeneratedPrompt('')
     setPromptError('')
@@ -762,8 +781,8 @@ function App() {
                     errors={detailedErrors}
                     total={errorCount}
                     selectionMode={promptScope === 'selected'}
-                    selectedLines={selectedErrorLines}
-                    onToggleLine={toggleErrorLine}
+                    selectedIds={selectedErrorIds}
+                    onToggleId={toggleErrorId}
                     activeLine={activeError?.line_number}
                     onSelectError={setActiveErrorLine}
                   />
@@ -822,14 +841,14 @@ function App() {
                         </label>
                         <label className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm text-slate-300 transition hover:bg-white/[0.04]">
                           <input type="radio" name="prompt-scope" value="selected" checked={promptScope === 'selected'} onChange={() => changePromptScope('selected')} className="h-4 w-4 accent-mint" />
-                          <span>Selected errors only <span className="text-xs text-slate-500">({selectedErrorLines.length})</span></span>
+                          <span>Selected errors only <span className="text-xs text-slate-500">({selectedErrorIds.length})</span></span>
                         </label>
                       </div>
 
-                      {promptScope === 'selected' && <p className="mt-3 text-xs leading-5 text-amber">Check the errors to include in the “Detected errors” section.</p>}
+                      {promptScope === 'selected' && <p className="mt-3 text-xs leading-5 text-amber">Check only the error occurrences you want to send. The generated prompt will exclude the other errors.</p>}
 
                       {!generatedPrompt && (
-                        <button type="button" onClick={handleGeneratePrompt} disabled={isGeneratingPrompt || (promptScope === 'selected' && selectedErrorLines.length === 0)} className="mt-6 w-full rounded-xl bg-mint px-4 py-3 text-xs font-bold text-ink transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50">
+                        <button type="button" onClick={handleGeneratePrompt} disabled={isGeneratingPrompt || (promptScope === 'selected' && selectedErrorIds.length === 0)} className="mt-6 w-full rounded-xl bg-mint px-4 py-3 text-xs font-bold text-ink transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50">
                           {isGeneratingPrompt ? 'Generating with Groq…' : 'Generate prompt'}
                         </button>
                       )}
